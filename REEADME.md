@@ -129,26 +129,6 @@ If you encounter any issues or need assistance:
 - Follow Network3 on Twitter for updates
 - Check GitHub issues for known problems
 
-## Updates
-
-To update your node:
-
-```bash
-# Stop the current node
-./network3.sh
-# Select option 3 (Stop)
-
-# Download the latest version
-wget -O network3.sh https://raw.githubusercontent.com/Galkurta/network3/main/network3.sh
-
-# Make executable
-chmod +x network3.sh
-
-# Start the node
-./network3.sh
-# Select option 2 (Start)
-```
-
 ## License
 
 This script is provided under the MIT license.
