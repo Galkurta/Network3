@@ -76,7 +76,7 @@ remove_network3_screens() {
 get_api_info() {
     if [ ! -d "${NODE_DIR}" ]; then
         handle_error "Node not installed. Please install prerequisites first."
-    }
+    fi
     
     cd "${NODE_DIR}" 2>/dev/null || handle_error "Failed to change directory"
     
@@ -145,7 +145,7 @@ start_network3() {
     
     if [ ! -d "${NODE_DIR}" ]; then
         handle_error "Directory '${NODE_DIR}' does not exist"
-    }
+    fi
     
     cd "${NODE_DIR}" || handle_error "Failed to change directory"
     
