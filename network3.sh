@@ -64,6 +64,11 @@ check_dependencies() {
         log_message "INFO" "Installing net-tools..."
         sudo apt install -y net-tools || handle_error "Failed to install net-tools"
     fi
+
+    if ! command -v wget &> /dev/null; then
+        log_message "INFO" "Installing wget..."
+        sudo apt install -y wget || handle_error "Failed to install wget"
+    fi
 }
 
 # Function to remove all network3 screen sessions
@@ -101,19 +106,55 @@ get_api_info() {
     fi
 }
 
-# Function for first start
-first_start_network3() {
-    log_message "INFO" "Starting initial setup for Network3 Node..."
+# Function to get API info with retry logic
+get_api_info_retry() {
+    if [ ! -d "${NODE_DIR}" ]; then
+        return 1
+    fi
+    
+    cd "${NODE_DIR}" 2>/dev/null || return 1
+    
+    local api_output
+    api_output=$(sudo bash manager.sh key)
+    local api_key
+    api_key=$(echo "$api_output" | awk '/System architecture is x86_64 \(64-bit\)/ {found=1; next} found')
+    
+    if [ -n "$api_key" ]; then
+        echo -e "${GREEN}API KEY INFO:${NC}"
+        echo -e "${BLUE}$api_key${NC}"
+        
+        # Display sync link
+        local server_ip
+        server_ip=$(hostname -I | awk '{print $1}')
+        local sync_link="https://account.network3.ai/main?o=${server_ip}:8080"
+        
+        echo -e "\n${GREEN}Sync Link:${NC}"
+        echo -e "${BLUE}${sync_link}${NC}"
+        return 0
+    fi
+    
+    return 1
+}
+
+# Function to install prerequisites
+install_prerequisites() {
+    log_message "INFO" "Starting prerequisites installation..."
     
     # Update system
     log_message "INFO" "Updating system packages..."
     sudo apt update && sudo apt upgrade -y || handle_error "System update failed"
     
-    # Check dependencies
+    # Check and install dependencies
     check_dependencies
     
     # Remove old screen sessions
     remove_network3_screens
+    
+    # Check if node directory exists and remove if it does
+    if [ -d "${NODE_DIR}" ]; then
+        log_message "INFO" "Removing existing node installation..."
+        rm -rf "${NODE_DIR}"
+    fi
     
     # Download and extract node
     log_message "INFO" "Downloading Network3 Node..."
@@ -123,39 +164,76 @@ first_start_network3() {
     tar -xvf "ubuntu-node-${NODE_VERSION}.tar" || handle_error "Extraction failed"
     rm -rf "ubuntu-node-${NODE_VERSION}.tar"
     
-    # Start node
-    cd "${NODE_DIR}" || handle_error "Failed to change directory"
-    screen -S "${SCREEN_NAME}" -dm bash -c "sudo bash manager.sh up; exec bash"
-    
-    sleep 5
-    get_api_info
-    
-    # Display sync link
-    local server_ip
-    server_ip=$(hostname -I | awk '{print $1}')
-    local sync_link="https://account.network3.ai/main?o=${server_ip}:8080"
-    
-    echo -e "\nSync Link:"
-    echo -e "\033]8;;${sync_link}\033\\${sync_link}\033]8;;\033\\"
+    log_message "INFO" "Prerequisites installation completed successfully"
+    log_message "INFO" "You can now start the node using option 2 from the main menu"
 }
 
-# Function to start node
-start_network3() {
-    log_message "INFO" "Starting Network3 Node..."
-    
+# Function to start node first time
+first_start_node() {
     if [ ! -d "${NODE_DIR}" ]; then
-        handle_error "Directory '${NODE_DIR}' does not exist"
+        handle_error "Prerequisites not installed. Please install prerequisites first (Option 1)"
     fi
+
+    log_message "INFO" "Starting Network3 Node for the first time..."
     
+    # Start node
     cd "${NODE_DIR}" || handle_error "Failed to change directory"
     
+    # Check if node is already running
     if screen -list | grep -q "${SCREEN_NAME}"; then
-        log_message "WARN" "Screen session '${SCREEN_NAME}' already exists"
-        screen -r "${SCREEN_NAME}"
-    else
-        screen -S "${SCREEN_NAME}" -dm bash -c "sudo bash manager.sh up; exec bash"
-        log_message "INFO" "Node started successfully"
+        log_message "INFO" "Node is already running. Stopping it first..."
+        stop_network3
+        sleep 3
     fi
+
+    # Run manager.sh up without screen first
+    log_message "INFO" "Initializing node..."
+    sudo bash manager.sh up
+    
+    # Check if initialization was successful
+    if [ $? -eq 0 ]; then
+        log_message "INFO" "Node initialization successful"
+    else
+        # If manager.sh up failed, try manager.sh down then up again
+        log_message "WARN" "Initial start failed, trying recovery..."
+        sudo bash manager.sh down
+        sleep 2
+        sudo bash manager.sh up || handle_error "Node initialization failed"
+    fi
+    
+    # Wait for node to be ready
+    sleep 5
+    
+    # Get server IP
+    local server_ip
+    server_ip=$(hostname -I | awk '{print $1}')
+    
+    # Display information
+    log_message "INFO" "Node initialization completed."
+    log_message "INFO" "You can access the dashboard at:"
+    echo -e "${BLUE}https://account.network3.ai/main?o=${server_ip}:8080${NC}"
+    
+    # Start screen session
+    log_message "INFO" "Starting screen session..."
+    screen -S "${SCREEN_NAME}" -dm bash -c "sudo bash manager.sh up; exec bash"
+    
+    sleep 3
+    
+    # Try to get API info with retry
+    local retry_count=0
+    local max_retries=3
+    
+    while [ $retry_count -lt $max_retries ]; do
+        if get_api_info_retry; then
+            break
+        fi
+        ((retry_count++))
+        log_message "WARN" "Retrying API info retrieval (Attempt $retry_count of $max_retries)..."
+        sleep 3
+    done
+    
+    log_message "INFO" "Node started successfully"
+    log_message "WARN" "Please wait a few minutes for the node to fully initialize"
 }
 
 # Function to stop node
@@ -180,7 +258,7 @@ restart_network3() {
     log_message "INFO" "Restarting Network3 Node..."
     stop_network3
     sleep 2
-    start_network3
+    first_start_node
     log_message "INFO" "Node restarted successfully"
 }
 
@@ -197,7 +275,7 @@ view_logs_network3() {
 show_menu() {
     echo -e "\nSelect an action:"
     echo "1) Install Prerequisites"
-    echo "2) Start"
+    echo "2) First Start"
     echo "3) Stop"
     echo "4) Restart"
     echo "5) View logs"
@@ -215,8 +293,8 @@ main() {
         show_menu
         
         case $choice in
-            1) first_start_network3 ;;
-            2) start_network3 ;;
+            1) install_prerequisites ;;
+            2) first_start_node ;;
             3) stop_network3 ;;
             4) restart_network3 ;;
             5) view_logs_network3 ;;
