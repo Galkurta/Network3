@@ -59,7 +59,7 @@ curl -fsSL https://raw.githubusercontent.com/Galkurta/Network3/main/network3.sh 
 3. Paste your API key in the input field
 4. Click OK to synchronize your node
 
-![Node Synchronization](https://ibb.co.com/MMGM3YM)
+![Node Synchronization](https://i.ibb.co.com/MMGM3YM/386000652-e079fd60-e823-4973-b9a3-79c2f0cf974e.png)
 
 ## Screen Command Usage
 
